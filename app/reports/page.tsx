@@ -54,10 +54,6 @@ import {
   differenceInDays,
 } from "date-fns"
 
-export const metadata: Metadata = {
-  title: "Financial Reports | Expense Management",
-  description: "Detailed financial analytics and spending insights",
-}
 
 // Calculate monthly data
 function calculateMonthlyData(transactions: Transaction[]) {
