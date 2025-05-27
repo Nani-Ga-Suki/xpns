@@ -31,8 +31,8 @@ export function ExpenseStats({
     const currentYear = now.getFullYear()
 
     const thisMonthTransactions = transactions.filter((transaction) => {
-      const transactionDate = new Date(transaction.date)
-      return transactionDate.getMonth() === currentMonth && transactionDate.getFullYear() === currentYear
+      const transactionDate = new Date(transaction.date + 'T00:00:00Z') // Parse as UTC
+      return transactionDate.getUTCMonth() === currentMonth && transactionDate.getUTCFullYear() === currentYear
     })
 
     const thisMonthExpenses = thisMonthTransactions
@@ -62,8 +62,8 @@ export function ExpenseStats({
     }
 
     const lastMonthTransactions = transactions.filter((transaction) => {
-      const transactionDate = new Date(transaction.date)
-      return transactionDate.getMonth() === lastMonth && transactionDate.getFullYear() === lastMonthYear
+      const transactionDate = new Date(transaction.date + 'T00:00:00Z') // Parse as UTC
+      return transactionDate.getUTCMonth() === lastMonth && transactionDate.getUTCFullYear() === lastMonthYear
     })
 
     const lastMonthExpenses = lastMonthTransactions
@@ -248,7 +248,7 @@ export function ExpenseStats({
             ) : (
               <div className="text-3xl font-bold text-foreground">{topCategory ? topCategory.name : "N/A"}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
+            <div className="text-xs text-muted-foreground mt-1">
               {isLoading ? (
                 <Skeleton className="h-4 w-32 mt-1" />
               ) : topCategory ? (
@@ -260,7 +260,7 @@ export function ExpenseStats({
               ) : (
                 "No transactions recorded yet"
               )}
-            </p>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
@@ -277,11 +277,11 @@ export function ExpenseStats({
             ) : thisMonthData.income > 0 ? (
               <>
                 <div className="text-3xl font-bold text-foreground">{savingsRate.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <div className="text-xs text-muted-foreground mt-1">
                   {savingsRate >= 0
                     ? `Saving ${savingsRate.toFixed(1)}% of income this month`
                     : `Spending ${Math.abs(savingsRate).toFixed(1)}% more than income`}
-                </p>
+                </div>
               </>
             ) : (
               <>

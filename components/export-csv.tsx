@@ -61,8 +61,10 @@ export function ExportCSV({ transactions, filename = "transactions" }: ExportCSV
 
   return (
     <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting || transactions.length === 0}>
-      <Download className="mr-2 h-4 w-4" />
-      {isExporting ? "Exporting..." : "Export CSV"}
+      {/* Icon with responsive margin */}
+      <Download className="h-4 w-4 sm:mr-2" />
+      {/* Text span hidden on mobile, inline on sm+ */}
+      <span className="hidden sm:inline">{isExporting ? "Exporting..." : "Export CSV"}</span>
     </Button>
   )
 }

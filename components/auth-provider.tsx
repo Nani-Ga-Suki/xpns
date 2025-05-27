@@ -34,44 +34,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Force refresh function - completely resets everything
   const forceRefresh = async (): Promise<boolean> => {
-    console.log("Force refreshing auth state")
+    console.log("[AUTH_PROVIDER] Attempting force refresh of auth state...")
     setIsLoading(true)
     setAuthError(false)
 
     try {
-      // First try to refresh the session
+      if (!supabase || !supabase.auth) {
+        console.error("[AUTH_PROVIDER] Supabase client or supabase.auth is not initialized in forceRefresh.")
+        setAuthError(true)
+        return false
+      }
+
+      // Log current session from Supabase JS library perspective
+      const { data: { session: currentSupabaseJsSession }, error: getSessionError } = await supabase.auth.getSession()
+      if (getSessionError) {
+        console.error("[AUTH_PROVIDER] Error calling supabase.auth.getSession() before refresh:", getSessionError)
+      } else {
+        console.log("[AUTH_PROVIDER] Session from supabase.auth.getSession() before refresh attempt:", currentSupabaseJsSession)
+      }
+      console.log("[AUTH_PROVIDER] AuthProvider's current 'session' state before refresh attempt:", session)
+
+
+      console.log("[AUTH_PROVIDER] Attempting supabase.auth.refreshSession().")
       const { data, error } = await supabase.auth.refreshSession()
 
       if (error) {
-        console.error("Error refreshing session:", error)
-        // Reset the client and try again
-        const newClient = resetSupabaseClient()
-        const { data: newData, error: newError } = await newClient.auth.refreshSession()
-
-        if (newError) {
-          console.error("Error after client reset:", newError)
-          setAuthError(true)
-          return false
-        }
-
-        if (newData.session) {
-          setSession(newData.session)
-          setUser(newData.user)
-          return true
-        }
-      } else if (data.session) {
+        console.error("[AUTH_PROVIDER] Error during supabase.auth.refreshSession():", error)
+        // If refresh fails, it's crucial to clear local session state as it's likely invalid
+        setUser(null)
+        setSession(null)
+        setAuthError(true) // Indicate an auth error occurred
+        // No need to redirect here, let the useEffect for authError handle it or the calling function.
+        return false // Indicate refresh failure
+      }
+      
+      if (data.session) {
+        console.log("[AUTH_PROVIDER] Session refreshed successfully. New session:", data.session)
         setSession(data.session)
         setUser(data.user)
-        return true
+        return true // Indicate refresh success
       }
-
-      // If we get here with no session, redirect to login
-      console.log("No session after refresh attempts, redirecting to login")
-      router.push("/login")
-      return false
-    } catch (error) {
-      console.error("Unexpected error in forceRefresh:", error)
+      
+      // If refreshSession succeeded but returned no session (should be rare if no error)
+      console.warn("[AUTH_PROVIDER] supabase.auth.refreshSession() succeeded but returned no session data.")
+      setUser(null)
+      setSession(null)
       setAuthError(true)
+      return false
+
+    } catch (err) {
+      console.error("[AUTH_PROVIDER] Unexpected error in forceRefresh:", err)
+      setAuthError(true) // Ensure authError is set for any unexpected error
       return false
     } finally {
       setIsLoading(false)
@@ -86,6 +99,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true)
 
       try {
+        if (!supabase) {
+          console.error("[AUTH_PROVIDER] Supabase client is not initialized in initAuth.")
+          if (mounted) {
+            setAuthError(true)
+            setIsLoading(false)
+          }
+          return
+        }
         // Get the session
         const {
           data: { session: initialSession },
@@ -143,37 +164,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth()
 
     // Set up auth state change listener
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, newSession) => {
-      console.log("Auth state changed:", event)
+    if (supabase && supabase.auth) { // Ensure supabase.auth is also checked
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, newSession) => {
+        console.log("Auth state changed:", event)
 
-      if (!mounted) return
+        if (!mounted) return
 
-      if (event === "SIGNED_OUT") {
-        setUser(null)
-        setSession(null)
-        return
-      }
+        if (event === "SIGNED_OUT") {
+          setUser(null)
+          setSession(null)
+          return
+        }
 
-      if (newSession) {
-        setUser(newSession.user)
-        setSession(newSession)
-      } else if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        // For these events, we need to get the latest user data
-        supabase.auth.getUser().then(({ data }) => {
-          if (mounted && data.user) {
-            setUser(data.user)
+        if (newSession) {
+          setUser(newSession.user)
+          setSession(newSession)
+        } else if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+          // For these events, we need to get the latest user data
+          // Also check supabase and supabase.auth here
+          if (supabase && supabase.auth) {
+            supabase.auth.getUser().then(({ data }) => {
+              if (mounted && data.user) {
+                setUser(data.user)
+              }
+            })
           }
-        })
-      }
-    })
+        }
+      })
 
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
+      return () => {
+        mounted = false
+        subscription?.unsubscribe()
+      }
+    } else {
+      console.error("[AUTH_PROVIDER] Supabase client or supabase.auth is not initialized, cannot set up auth state listener.")
+      // Ensure useEffect cleanup function is always returned
+      return () => {
+        mounted = false
+      }
     }
-  }, [supabase.auth, router])
+  }, [supabase, router])
 
   // Handle auth errors
   useEffect(() => {
@@ -191,7 +223,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       setIsLoading(true)
-      await supabase.auth.signOut()
+      if (supabase && supabase.auth) { // Ensure supabase.auth is also checked
+        await supabase.auth.signOut()
+      } else {
+        console.error("[AUTH_PROVIDER] Supabase client or supabase.auth not initialized, cannot sign out.")
+      }
 
       // Clear state
       setUser(null)

@@ -9,10 +9,13 @@ import { format } from "date-fns"
 import { getSupabaseBrowser } from "@/lib/supabase"
 import { useAuth } from "@/components/auth-provider"
 import { useRouter } from "next/navigation"
+import { CreditCard } from "lucide-react" // Import CreditCard icon
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge" // Import Badge component
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox" // Added Checkbox import
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
 import { Calendar } from "@/components/ui/calendar"
@@ -36,7 +39,15 @@ const formSchema = z.object({
   }),
   category: z.string().optional(),
   notes: z.string().optional(),
+  isCredit: z.boolean().default(false), // Added isCredit
+  installments: z.coerce.number().min(1).max(24).optional(), // Added installments
+}).refine(data => !data.isCredit || data.installments, { // Added refinement
+  message: "Installments are required for credit purchases",
+  path: ["installments"]
 })
+
+// Explicitly define the form values type
+type TransactionFormValues = z.infer<typeof formSchema>;
 
 // Define categories based on transaction type
 const expenseCategories = [
@@ -76,7 +87,8 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
   const { forceRefresh } = useAuth()
   const router = useRouter()
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  // Use the explicit type alias here
+  const form = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       amount: transaction?.amount || 0,
@@ -85,6 +97,8 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
       type: transaction?.type || "expense",
       category: transaction?.category || "",
       notes: transaction?.notes || "",
+      isCredit: transaction?.is_credit || false, // Added default value (check existing transaction)
+      installments: transaction?.installments || undefined, // Added default value
     },
   })
 
@@ -104,9 +118,16 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
     }
   }, [form.watch(), error])
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: TransactionFormValues) { // Use the explicit type alias
     setIsLoading(true)
     setError(null)
+
+    // Add null check for supabase client
+    if (!supabase) {
+      setError("Database connection error. Please try again later.")
+      setIsLoading(false)
+      return
+    }
 
     try {
       // First check if we have a valid session
@@ -123,13 +144,29 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
         }
       }
 
+      // Prepare transaction data, handling credit logic
+      const isExpense = values.type === "expense";
+      const isCreditPurchase = isExpense && values.isCredit;
+
+      // Calculate amount per installment if it's a credit purchase
+      const transactionAmount = isCreditPurchase
+        ? values.amount / (values.installments || 1)
+        : values.amount;
+
       const newTransaction: NewTransaction = {
-        amount: values.amount,
+        amount: transactionAmount,
         description: values.description,
         date: values.date.toISOString(),
         type: values.type,
         category: values.category || null,
         notes: values.notes || null,
+        // Add credit fields if applicable (assuming snake_case in DB)
+        is_credit: isCreditPurchase ? true : undefined,
+        installments: isCreditPurchase ? values.installments : undefined,
+        original_amount: isCreditPurchase ? values.amount : undefined,
+        // Note: remaining_installments might need specific handling on update vs create
+        // For simplicity here, we'll set it based on the submitted installments
+        remaining_installments: isCreditPurchase ? (values.installments || 1) - 1 : undefined,
       }
 
       // Log the transaction for debugging
@@ -215,14 +252,14 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
         type: "expense",
         category: "",
         notes: "",
+        isCredit: false, // Reset credit fields
+        installments: undefined, // Reset credit fields
       })
 
       // Callback if provided
       if (onSuccess) {
-        // Delay the callback slightly to allow the database to settle
-        setTimeout(() => {
-          onSuccess()
-        }, 300)
+        // Callback immediately after successful operation
+        onSuccess()
       }
     } catch (error: any) {
       console.error("Error saving transaction:", error)
@@ -239,18 +276,29 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
   // Get the appropriate categories based on transaction type
   const categories = transactionType === "income" ? incomeCategories : expenseCategories
 
+  // Watch the isCredit field value
+  const isCreditChecked = form.watch("isCredit");
+
   return (
     <Form {...form}>
       {error && <div className="bg-destructive/15 text-destructive p-3 rounded-md mb-4 text-sm">{error}</div>}
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
         {/* Form fields remain the same */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
           <FormField
             control={form.control}
             name="amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Amount</FormLabel>
+                <FormLabel className="flex items-center gap-2"> {/* Added flex container */}
+                  Amount
+                  {/* Conditionally render badge if editing a credit transaction */}
+                  {transaction?.is_credit && (
+                    <Badge variant="outline" className="text-xs font-normal">
+                      <CreditCard className="mr-1 h-3 w-3" /> Credit
+                    </Badge>
+                  )}
+                </FormLabel>
                 <FormControl>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
@@ -266,7 +314,7 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
             name="type"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Type</FormLabel>
+                <FormLabel className="flex items-center">Type</FormLabel> {/* Added flex items-center */}
                 <Select
                   onValueChange={(value) => {
                     field.onChange(value)
@@ -302,12 +350,77 @@ export function TransactionForm({ userId, transaction, onSuccess }: TransactionF
             </FormItem>
           )}
         />
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+
+        {/* Wrapper div for the entire Credit Purchase section with transition */}
+        <div
+          className={cn(
+            "transition-all duration-300 ease-in-out overflow-hidden space-y-3", // Adjusted space-y
+            transactionType === "expense"
+              ? "max-h-60 opacity-100 pt-2" // Adjust max-h if needed, added pt-2
+              : "max-h-0 opacity-0 pt-0"
+          )}
+        >
+            <FormField
+              control={form.control}
+              name="isCredit"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 shadow">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>
+                      Credit Purchase
+                    </FormLabel>
+                    <FormDescription>
+                      Check if this is a credit purchase with installments.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            {/* Wrapper div for installments field with transition */}
+            <div
+              className={cn(
+                "transition-all duration-300 ease-in-out overflow-hidden",
+                isCreditChecked
+                  ? "max-h-40 opacity-100" // Adjust max-h if needed
+                  : "max-h-0 opacity-0"
+              )}
+            >
+              <FormField
+                control={form.control}
+                name="installments"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Installments (1-24)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="24"
+                        placeholder="e.g., 12"
+                        {...field}
+                        value={field.value ?? ""} // Use nullish coalescing for default
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+        </div> {/* End of the transitioning wrapper div */}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
           <FormField
             control={form.control}
             name="date"
             render={({ field }) => (
-              <FormItem className="flex flex-col">
+              <FormItem> {/* Removed flex flex-col */}
                 <FormLabel>Date</FormLabel>
                 <Popover>
                   <PopoverTrigger asChild>

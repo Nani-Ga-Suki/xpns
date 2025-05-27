@@ -7,13 +7,18 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          amount: number
+          amount: number // For installments, this might be the installment amount
           description: string
           date: string
           type: "income" | "expense"
           category: string | null
           notes: string | null
           created_at: string
+          // Credit-related fields
+          is_credit?: boolean | null
+          installments?: number | null
+          original_amount?: number | null // The total original amount of the purchase
+          remaining_installments?: number | null
         }
         Insert: {
           id?: string
@@ -25,6 +30,11 @@ export interface Database {
           category?: string | null
           notes?: string | null
           created_at?: string
+          // Add optional credit-related fields
+          is_credit?: boolean
+          installments?: number
+          original_amount?: number
+          remaining_installments?: number
         }
         Update: {
           id?: string
@@ -36,6 +46,11 @@ export interface Database {
           category?: string | null
           notes?: string | null
           created_at?: string
+          // Credit-related fields
+          is_credit?: boolean | null
+          installments?: number | null
+          original_amount?: number | null
+          remaining_installments?: number | null
         }
       }
       profiles: {

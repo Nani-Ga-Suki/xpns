@@ -6,6 +6,8 @@ import { DashboardShell } from "@/components/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { TransactionList } from "@/components/transaction-list"
 import { ExportCSV } from "@/components/export-csv"
+import { Button } from "@/components/ui/button" // Import Button
+import { RefreshCw } from "lucide-react" // Import RefreshCw icon
 
 export const metadata: Metadata = {
   title: "Transactions | Personal Finance Manager",
@@ -44,7 +46,10 @@ export default async function TransactionsPage() {
             <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
             <p className="text-muted-foreground">View and manage all your financial transactions</p>
           </div>
-          <ExportCSV transactions={transactions || []} />
+          <div className="flex items-center gap-2"> {/* Wrap buttons */}
+            {/* Refresh button removed */}
+            <ExportCSV transactions={transactions || []} />
+          </div>
         </div>
 
         <Card>

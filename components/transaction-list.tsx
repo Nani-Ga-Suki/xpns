@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react"
 import { format } from "date-fns"
-import { Edit2, Filter, Search, Trash2 } from "lucide-react"
+// Removed payment method icons: CreditCard, Landmark, DollarSign, HelpCircle
+import { Edit2, Filter, Search, Trash2, Check, ChevronDown, ChevronUp } from "lucide-react"
 import { getSupabaseBrowser } from "@/lib/supabase"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -10,6 +11,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import {
   Dialog,
@@ -18,6 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Pagination,
@@ -34,6 +39,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import type { Transaction } from "@/types/supabase"
 import { TransactionForm } from "./transaction-form"
 import { useMobile } from "@/hooks/use-mobile"
+// Removed Tooltip import
+// import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface TransactionListProps {
   transactions: Transaction[]
@@ -56,13 +63,17 @@ export function TransactionList({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const supabase = getSupabaseBrowser()
+  const supabase = getSupabaseBrowser()!
   const isMobile = useMobile()
+  // Removed expandedCardIds state and toggleCardExpansion function
 
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
   const [sortBy, setSortBy] = useState<string>("date-desc")
+  const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all");
+  const [creditFilter, setCreditFilter] = useState<"all" | "yes" | "no">("all");
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = isCompact ? 5 : 10
 
@@ -85,11 +96,9 @@ export function TransactionList({
         description: "Your transaction has been deleted successfully.",
       })
 
-      // Close dialog
       setIsDeleteDialogOpen(false)
       setSelectedTransaction(null)
 
-      // Notify parent component to refresh data
       if (onTransactionChange) {
         onTransactionChange()
       }
@@ -109,28 +118,26 @@ export function TransactionList({
     setIsEditDialogOpen(false)
     setSelectedTransaction(null)
 
-    // Notify parent component to refresh data
     if (onTransactionChange) {
       onTransactionChange()
     }
   }
 
-  // Filter and sort transactions
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
-        // Filter by search term
         const matchesSearch =
           transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (transaction.category?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-
-        // Filter by category
-        const matchesCategory = categoryFilter === "all" || transaction.category === categoryFilter
-
-        return matchesSearch && matchesCategory
+          (transaction.category?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+        const matchesCategory = categoryFilter === "all" || transaction.category === categoryFilter;
+        const matchesType = typeFilter === "all" || transaction.type === typeFilter;
+        const matchesCredit =
+          creditFilter === "all" ||
+          (creditFilter === "yes" && transaction.is_credit === true) ||
+          (creditFilter === "no" && (transaction.is_credit === false || transaction.is_credit === null));
+        return matchesSearch && matchesCategory && matchesType && matchesCredit;
       })
       .sort((a, b) => {
-        // Sort by selected option
         switch (sortBy) {
           case "amount-asc":
             return Number(a.amount) - Number(b.amount)
@@ -143,16 +150,14 @@ export function TransactionList({
             return new Date(b.date).getTime() - new Date(a.date).getTime()
         }
       })
-  }, [transactions, searchTerm, categoryFilter, sortBy])
+  }, [transactions, searchTerm, categoryFilter, typeFilter, creditFilter, sortBy]);
 
-  // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage)
   const paginatedTransactions = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     return filteredTransactions.slice(startIndex, startIndex + itemsPerPage)
   }, [filteredTransactions, currentPage, itemsPerPage])
 
-  // Get unique categories for filter
   const categories = useMemo(() => {
     const uniqueCategories = new Set<string>()
     transactions.forEach((t) => {
@@ -161,7 +166,6 @@ export function TransactionList({
     return Array.from(uniqueCategories)
   }, [transactions])
 
-  // Animation variants
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -177,8 +181,11 @@ export function TransactionList({
     show: { opacity: 1, y: 0 },
   }
 
-  // If loading, show skeleton
+  // Removed PaymentMethodIcon helper component
+
   if (isLoading) {
+    // Reverted skeleton grid cols to original (assuming 6 columns before)
+    const skeletonCols = 6;
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -188,8 +195,8 @@ export function TransactionList({
 
         <div className="rounded-md border">
           <div className="h-10 border-b bg-muted/50">
-            <div className="grid grid-cols-6 h-full px-4">
-              {Array(6)
+            <div className={`grid grid-cols-${skeletonCols} h-full px-4`}>
+              {Array(skeletonCols)
                 .fill(0)
                 .map((_, i) => (
                   <Skeleton key={i} className="h-4 w-[80%] my-auto" />
@@ -201,8 +208,8 @@ export function TransactionList({
               .fill(0)
               .map((_, i) => (
                 <div key={i} className="border-b h-16 px-4">
-                  <div className="grid grid-cols-6 h-full items-center">
-                    {Array(6)
+                  <div className={`grid grid-cols-${skeletonCols} h-full items-center`}>
+                    {Array(skeletonCols)
                       .fill(0)
                       .map((_, j) => (
                         <Skeleton key={j} className="h-4 w-[80%]" />
@@ -216,60 +223,32 @@ export function TransactionList({
     )
   }
 
-  // If there are no transactions, show a message
   if (transactions.length === 0) {
     return (
-      <div className="text-center py-8">
+      <div className="text-center py-12">
         <p className="text-muted-foreground">No transactions found.</p>
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => {
-            if (onTransactionChange) {
-              onTransactionChange()
-            }
-          }}
-        >
-          Refresh
-        </Button>
       </div>
     )
   }
 
-  // Render as cards on mobile
   if (isMobile) {
     return (
       <div className="space-y-4">
         {!isCompact && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 px-2">
             <Input
               placeholder="Search transactions..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full"
             />
-            <div className="flex gap-2">
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-full">
-                  <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4" />
-                    <span>Category</span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category.charAt(0).toUpperCase() + category.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* Filter Dialog Removed */}
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="w-full">
                   <span>Sort By</span>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="date-desc">Date (Newest)</SelectItem>
                   <SelectItem value="date-asc">Date (Oldest)</SelectItem>
                   <SelectItem value="amount-desc">Amount (Highest)</SelectItem>
@@ -282,56 +261,99 @@ export function TransactionList({
 
         <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
           <AnimatePresence>
-            {paginatedTransactions.map((transaction) => (
-              <motion.div key={transaction.id} variants={item} layout>
-                <Card className="overflow-hidden border-none shadow-sm hover:shadow-md transition-all duration-300">
-                  <CardHeader className="pb-2 bg-muted/5">
-                    <div className="flex justify-between items-center">
-                      <CardTitle className="text-base">{transaction.description}</CardTitle>
-                      <Badge variant={transaction.type === "income" ? "default" : "destructive"} className="ml-2">
-                        {transaction.type === "income" ? "Income" : "Expense"}
-                      </Badge>
+            {paginatedTransactions.map((transaction) => {
+              // Removed isExpanded check
+              return (
+                <motion.div key={transaction.id} variants={item} layout className="min-w-[280px]">
+                  {/* Card structure completely redesigned based on image */}
+                  <Card className="overflow-hidden border shadow-sm hover:shadow-md transition-shadow duration-300">
+                    <div className="p-4 space-y-3"> {/* Main container with padding and vertical spacing */}
+
+                      {/* Top Row: Description/Date (Left) & Type Badge (Right) */}
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="space-y-0.5">
+                          <p className="text-2xl font-bold leading-tight break-words"> {/* Description - Made larger and bold */}
+                            {transaction.description}
+                          </p>
+                          <p className="text-sm text-muted-foreground"> {/* Date */}
+                            {format(new Date(transaction.date), "MMM d, yyyy")} {/* Using full year format */}
+                          </p>
+                        </div>
+                        {/* Type Badge (Styled like image) */}
+                        <Badge
+                          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium text-white ${
+                            transaction.type === 'income'
+                              ? 'bg-green-600' // Solid green for income
+                              : 'bg-red-600' // Solid red for expense
+                          }`}
+                          // No variant needed when background color is set directly
+                        >
+                          {transaction.type === 'income' ? 'Income' : 'Expense'}
+                        </Badge>
+                      </div>
+
+                      {/* Middle Row: Amount & Category */}
+                      <div className="space-y-1">
+                         {/* Amount (Large & Bold, Color-coded) */}
+                         <p
+                           className={`text-base font-medium leading-none ${ // Amount - Made smaller and medium weight
+                             transaction.type === 'income' ? 'text-green-700 dark:text-green-500' : 'text-red-700 dark:text-red-500'
+                           }`}
+                         >
+                           {/* No +/- sign based on image */}
+                           ${Number(transaction.amount).toFixed(2)}
+                         </p>
+                         {/* Category Badge (Outline) */}
+                         {transaction.category ? (
+                           <Badge variant="outline" className="py-0 px-1.5 text-xs font-normal">
+                             {transaction.category.charAt(0).toUpperCase() + transaction.category.slice(1)}
+                           </Badge>
+                         ) : (
+                           <Badge variant="outline" className="py-0 px-1.5 text-xs font-normal">
+                             Uncategorized {/* Display something if no category */}
+                           </Badge>
+                         )}
+                      </div>
+
+                      {/* Notes (Conditional) */}
+                      {transaction.notes && (
+                        <p className="text-sm text-muted-foreground pt-1 break-words">
+                          {transaction.notes}
+                        </p>
+                      )}
+
+                      {/* Bottom Row: Action Buttons (Right Aligned) */}
+                      <div className="flex justify-end items-center gap-1 pt-1">
+                         <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-muted-foreground hover:text-foreground" // Adjusted padding/height
+                          onClick={() => {
+                            setSelectedTransaction(transaction)
+                            setIsEditDialogOpen(true)
+                          }}
+                        >
+                          <Edit2 className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10" // Adjusted padding/height
+                          onClick={() => {
+                            setSelectedTransaction(transaction)
+                            setIsDeleteDialogOpen(true)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                    <CardDescription>{format(new Date(transaction.date), "PPP")}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pb-2 pt-4">
-                    <p className="text-2xl font-bold">${Number(transaction.amount).toFixed(2)}</p>
-                    {transaction.category && (
-                      <Badge variant="outline" className="mt-2">
-                        {transaction.category.charAt(0).toUpperCase() + transaction.category.slice(1)}
-                      </Badge>
-                    )}
-                    {transaction.notes && (
-                      <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{transaction.notes}</p>
-                    )}
-                  </CardContent>
-                  <CardFooter className="flex justify-end space-x-2 pt-0 pb-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedTransaction(transaction)
-                        setIsEditDialogOpen(true)
-                      }}
-                    >
-                      <Edit2 className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedTransaction(transaction)
-                        setIsDeleteDialogOpen(true)
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </motion.div>
-            ))}
+                  </Card>
+                </motion.div>
+              )
+            })}
           </AnimatePresence>
         </motion.div>
 
@@ -378,7 +400,7 @@ export function TransactionList({
 
         {/* Edit Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="w-[90vw] max-w-md rounded-lg overflow-y-auto max-h-[85vh] sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Edit Transaction</DialogTitle>
               <DialogDescription>Make changes to your transaction here.</DialogDescription>
@@ -386,14 +408,14 @@ export function TransactionList({
             {selectedTransaction && (
               <TransactionForm
                 userId={userId}
+                // Reverted transaction object passed to form
                 transaction={{
-                  id: selectedTransaction.id,
+                  ...selectedTransaction,
                   amount: Number(selectedTransaction.amount),
-                  description: selectedTransaction.description,
-                  date: selectedTransaction.date,
-                  type: selectedTransaction.type,
-                  category: selectedTransaction.category,
-                  notes: selectedTransaction.notes, // Add this line to pass the notes
+                  is_credit: selectedTransaction.is_credit ?? false,
+                  installments: selectedTransaction.installments ?? undefined,
+                  original_amount: selectedTransaction.original_amount ?? undefined,
+                  remaining_installments: selectedTransaction.remaining_installments ?? undefined, // Fix type mismatch
                 }}
                 onSuccess={handleEditSuccess}
               />
@@ -403,14 +425,14 @@ export function TransactionList({
 
         {/* Delete Dialog */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <DialogContent>
+          <DialogContent className="w-[90vw] max-w-sm rounded-lg">
             <DialogHeader>
               <DialogTitle>Delete Transaction</DialogTitle>
               <DialogDescription>
                 Are you sure you want to delete this transaction? This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
+            <DialogFooter className="flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2">
               <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
                 Cancel
               </Button>
@@ -439,22 +461,7 @@ export function TransactionList({
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[180px]">
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  <span>Category</span>
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    <div className="flex items-center">{category.charAt(0).toUpperCase() + category.slice(1)}</div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Filter Dialog Removed */}
           </div>
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-[180px]">
@@ -472,21 +479,25 @@ export function TransactionList({
 
       <div className="rounded-md border overflow-hidden shadow-sm">
         <Table>
+          {/* Reverted Table Header */}
           <TableHeader className="bg-muted/10">
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead className="w-[150px]">Category</TableHead>
-              <TableHead className="w-[150px]">Notes</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead className="hidden md:table-cell">Notes</TableHead>
+              <TableHead className="hidden md:table-cell">Type</TableHead>
+              <TableHead className="hidden md:table-cell">Category</TableHead>
+              {/* Removed Method Header */}
               <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[100px] text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
+          {/* Reverted Table Body Mapping */}
           <TableBody>
             {paginatedTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                {/* Reverted colSpan to 7 */}
+                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                   No transactions found
                 </TableCell>
               </TableRow>
@@ -499,52 +510,55 @@ export function TransactionList({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="border-b hover:bg-muted/5 transition-colors"
+                    // Added even:bg-muted/5 for row striping
+                    className="border-b hover:bg-muted/10 even:bg-muted/5 transition-colors"
                   >
-                    <TableCell className="font-medium">{format(new Date(transaction.date), "MMM d, yyyy")}</TableCell>
-                    <TableCell>{transaction.description}</TableCell>
-                    <TableCell>
-                      {transaction.category ? (
-                        <Badge variant="outline">
-                          {transaction.category.charAt(0).toUpperCase() + transaction.category.slice(1)}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-[150px]">
+                    {/* Date */}
+                    <TableCell>{format(new Date(transaction.date), "MMM d, yyyy")}</TableCell>
+                    {/* Description */}
+                    <TableCell className="font-medium">{transaction.description}</TableCell>
+                    {/* Notes */}
+                    <TableCell className="hidden md:table-cell max-w-[150px]">
                       {transaction.notes ? (
-                        <span className="text-sm text-muted-foreground line-clamp-1">{transaction.notes}</span>
+                        // Removed Tooltip components
+                        <span className="truncate block text-sm text-muted-foreground">{transaction.notes}</span>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={transaction.type === "income" ? "default" : "destructive"}>
+                    {/* Type */}
+                    <TableCell className="hidden md:table-cell">
+                      <Badge className={transaction.type === "income" ? "badge-income" : ""} variant={transaction.type === "income" ? "default" : "destructive"}>
                         {transaction.type === "income" ? "Income" : "Expense"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right font-medium">${Number(transaction.amount).toFixed(2)}</TableCell>
-                    <TableCell className="text-right">
+                    {/* Category */}
+                    <TableCell className="hidden md:table-cell">
+                      {transaction.category ? (
+                        <Badge variant="outline" className="truncate">
+                          {transaction.category.charAt(0).toUpperCase() + transaction.category.slice(1)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                    </TableCell>
+                    {/* Removed Method Cell */}
+                    {/* Amount */}
+                    {/* Added conditional text color and +/- sign for amount */}
+                    <TableCell
+                      className={`text-right font-medium ${ // Removed font-mono
+                        transaction.type === 'income' ? 'text-green-600 dark:text-green-500' : 'text-red-600 dark:text-red-500'
+                      }`}
+                    >
+                      {transaction.type === 'income' ? '+' : '-'}${Number(transaction.amount).toFixed(2)}
+                    </TableCell>
+                    {/* Actions */}
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" className="h-8 w-8 p-0">
                             <span className="sr-only">Open menu</span>
-                            <svg
-                              width="15"
-                              height="15"
-                              viewBox="0 0 15 15"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-4 w-4"
-                            >
-                              <path
-                                d="M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z"
-                                fill="currentColor"
-                                fillRule="evenodd"
-                                clipRule="evenodd"
-                              ></path>
-                            </svg>
+                            <Edit2 className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -555,18 +569,16 @@ export function TransactionList({
                             }}
                             className="dropdown-menu-item"
                           >
-                            <Edit2 className="mr-2 h-4 w-4" />
-                            Edit
+                            <Edit2 className="mr-2 h-4 w-4" /> Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => {
                               setSelectedTransaction(transaction)
                               setIsDeleteDialogOpen(true)
                             }}
-                            className="dropdown-menu-item"
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10 dropdown-menu-item"
                           >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -622,7 +634,7 @@ export function TransactionList({
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="w-[90vw] max-w-md rounded-lg overflow-y-auto max-h-[85vh] sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Edit Transaction</DialogTitle>
             <DialogDescription>Make changes to your transaction here.</DialogDescription>
@@ -630,14 +642,14 @@ export function TransactionList({
           {selectedTransaction && (
             <TransactionForm
               userId={userId}
+              // Reverted transaction object passed to form
               transaction={{
-                id: selectedTransaction.id,
+                ...selectedTransaction,
                 amount: Number(selectedTransaction.amount),
-                description: selectedTransaction.description,
-                date: selectedTransaction.date,
-                type: selectedTransaction.type,
-                category: selectedTransaction.category,
-                notes: selectedTransaction.notes,
+                is_credit: selectedTransaction.is_credit ?? false,
+                installments: selectedTransaction.installments ?? undefined,
+                original_amount: selectedTransaction.original_amount ?? undefined,
+                remaining_installments: selectedTransaction.remaining_installments ?? undefined, // Fix type mismatch
               }}
               onSuccess={handleEditSuccess}
             />
@@ -647,14 +659,14 @@ export function TransactionList({
 
       {/* Delete Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[90vw] max-w-sm rounded-lg">
           <DialogHeader>
             <DialogTitle>Delete Transaction</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete this transaction? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2">
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
               Cancel
             </Button>
@@ -667,4 +679,3 @@ export function TransactionList({
     </div>
   )
 }
-

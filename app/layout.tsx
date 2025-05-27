@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/components/auth-provider"
+import { TransactionsProvider } from "@/contexts/transactions-context" // Import the provider
 
 const rethinkSans = Rethink_Sans({
   subsets: ["latin"],
@@ -18,7 +19,13 @@ export const metadata: Metadata = {
   icons: {
     icon: "/icon.svg",
   },
-    generator: 'v0.dev'
+  generator: 'v0.dev',
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  }
 }
 
 export default function RootLayout({
@@ -27,11 +34,13 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={rethinkSans.variable}>
+    <html lang="en" className={rethinkSans.variable} suppressHydrationWarning>
       <body className={rethinkSans.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <AuthProvider>
-            {children}
+            <TransactionsProvider> {/* Wrap children with TransactionsProvider */}
+              {children}
+            </TransactionsProvider>
             <Toaster />
           </AuthProvider>
         </ThemeProvider>

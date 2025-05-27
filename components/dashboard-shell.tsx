@@ -1,77 +1,31 @@
 "use client"
 
 import type React from "react"
-import { DashboardNav } from "@/components/dashboard-nav"
+// Removed DashboardNav import as it's no longer used directly here
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
-import { LayoutDashboard, CreditCard, Settings, PieChart, Menu } from "lucide-react"
+// Removed unused icons and components
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+// Removed Sheet imports
+// Removed VisuallyHidden import
 import { useState } from "react"
+import { Chatbot } from "@/components/chatbot" // Import the Chatbot component
 
 interface DashboardShellProps {
   children?: React.ReactNode
 }
 
 export function DashboardShell({ children }: DashboardShellProps) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-
-  const navItems = [
-    {
-      title: "Dashboard",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Transactions",
-      href: "/transactions",
-      icon: CreditCard,
-    },
-    {
-      title: "Reports",
-      href: "/reports",
-      icon: PieChart,
-    },
-    {
-      title: "Settings",
-      href: "/settings",
-      icon: Settings,
-    },
-  ]
+  // Removed isMobileMenuOpen state as mobile menu is gone
+  // Removed navItems array as navigation is gone
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between py-4">
+          {/* Mobile menu removed */}
           <div className="flex items-center gap-2">
-            <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-              <SheetTrigger asChild className="md:hidden">
-                <Button variant="ghost" size="icon" className="mr-2">
-                  <Menu className="h-5 w-5" />
-                  <span className="sr-only">Toggle menu</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[240px] sm:w-[280px] pr-0">
-                <div className="px-2 py-6">
-                  <div className="flex items-center gap-2 mb-6 px-4">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-6 w-6 text-primary"
-                    >
-                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                    </svg>
-                    <span className="font-bold">Finance Manager</span>
-                  </div>
-                  <DashboardNav items={navItems} />
-                </div>
-              </SheetContent>
-            </Sheet>
+            {/* Logo and Title */}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
@@ -92,13 +46,17 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </div>
         </div>
       </header>
-      <div className="container flex-1 items-start md:grid md:grid-cols-[220px_1fr] md:gap-6 lg:grid-cols-[240px_1fr] lg:gap-10 py-6">
-        <aside className="fixed top-16 z-30 -ml-2 hidden h-[calc(100vh-4rem)] w-full shrink-0 overflow-y-auto border-r md:sticky md:block">
-          <div className="py-6 pr-6">
-            <DashboardNav items={navItems} />
-          </div>
+      {/* Updated layout: Main content on left, Chatbot placeholder on right */}
+      <div className="container flex flex-1 gap-8 px-4 py-4 md:px-6 md:py-6 max-w-[1900px]"> {/* Added max-width */}
+        {/* Main content area */}
+        {/* Main content area takes remaining space */}
+        <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+
+        {/* Chatbot Panel */}
+        {/* Use flex-none to prevent shrinking, define width, ensure full height */}
+        <aside className="hidden w-[300px] shrink-0 flex-col md:flex lg:w-[350px] h-[calc(100vh-4rem)] sticky top-16">
+             <Chatbot />
         </aside>
-        <main className="flex w-full flex-col overflow-hidden">{children}</main>
       </div>
     </div>
   )

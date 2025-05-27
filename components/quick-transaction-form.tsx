@@ -9,14 +9,16 @@ import { format } from "date-fns"
 import { getSupabaseBrowser } from "@/lib/supabase"
 
 import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form"
+// Consolidated imports from @/components/ui/form
+import { Form, FormControl, FormField, FormItem, FormMessage, FormLabel, FormDescription } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/components/ui/use-toast"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import type { NewTransaction } from "@/types/supabase"
+import type { NewTransaction } from "@/types/supabase" // Assuming this might need is_credit etc. later
 import { useAuth } from "@/components/auth-provider"
 import { useRouter } from "next/navigation"
 
@@ -35,7 +37,15 @@ const formSchema = z.object({
   }),
   category: z.string().optional(),
   notes: z.string().optional(),
+  isCredit: z.boolean().default(false), // Added isCredit
+  installments: z.coerce.number().min(1).max(24).optional() // Added installments
+}).refine(data => !data.isCredit || data.installments, { // Added refinement
+  message: "Installments are required for credit purchases",
+  path: ["installments"]
 })
+
+// Explicitly define the form values type
+type QuickFormValues = z.infer<typeof formSchema>;
 
 // Define categories based on transaction type
 const expenseCategories = [
@@ -74,7 +84,8 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
   const { forceRefresh } = useAuth()
   const router = useRouter()
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  // Use the explicit type alias here
+  const form = useForm<QuickFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       amount: 0,
@@ -83,6 +94,8 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
       type: "expense",
       category: "",
       notes: "",
+      isCredit: false, // Added default value
+      installments: undefined, // Added default value
     },
   })
 
@@ -103,6 +116,13 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
     setIsLoading(true)
     setError(null)
 
+    // Add null check for supabase client
+    if (!supabase) {
+      setError("Database connection error. Please try again later.")
+      setIsLoading(false)
+      return
+    }
+
     try {
       // First check if we have a valid session
       const {
@@ -118,14 +138,27 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
         }
       }
 
+      // Prepare transaction data, handling credit logic
+      const isExpense = values.type === "expense";
+      const isCreditPurchase = isExpense && values.isCredit;
+
+      const transactionAmount = isCreditPurchase
+        ? values.amount / (values.installments || 1)
+        : values.amount;
+
       const newTransaction: NewTransaction = {
-        amount: values.amount,
+        amount: transactionAmount,
         description: values.description,
         date: values.date.toISOString(),
         type: values.type,
         category: values.category || null,
         notes: values.notes || null,
-      }
+        // Add credit fields if applicable (assuming snake_case in DB)
+        is_credit: isCreditPurchase ? true : undefined,
+        installments: isCreditPurchase ? values.installments : undefined,
+        original_amount: isCreditPurchase ? values.amount : undefined,
+        remaining_installments: isCreditPurchase ? (values.installments || 1) - 1 : undefined,
+      };
 
       console.log("Submitting quick transaction:", newTransaction)
 
@@ -169,6 +202,8 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
         type: transactionType,
         category: "",
         notes: "",
+        isCredit: false, // Reset credit fields
+        installments: undefined, // Reset credit fields
       })
 
       // Callback if provided
@@ -189,6 +224,9 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
 
   // Get the appropriate categories based on transaction type
   const categories = transactionType === "income" ? incomeCategories : expenseCategories
+
+  // Watch the isCredit field value
+  const isCreditChecked = form.watch("isCredit");
 
   // Handle category selection
   const handleCategorySelect = (category: string) => {
@@ -239,6 +277,72 @@ export function QuickTransactionForm({ userId, onSuccess }: QuickTransactionForm
             />
           </div>
         </div>
+
+        {/* Wrapper div for the entire Credit Purchase section with transition */}
+        <div
+          className={cn(
+            "transition-all duration-300 ease-in-out overflow-hidden",
+            transactionType === "expense"
+              ? "max-h-60 opacity-100 pt-2" // Adjust max-h if needed, added pt-2
+              : "max-h-0 opacity-0 pt-0"
+          )}
+        >
+          <div className="space-y-4"> {/* Inner div to maintain spacing */}
+            <FormField
+              control={form.control}
+              name="isCredit"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 pt-1">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm">Credit Purchase</FormLabel> {/* Adjusted label size */}
+                    <FormDescription className="text-xs"> {/* Adjusted description size */}
+                      Check if this is a credit purchase with installments.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            {/* Wrapper div for installments field with transition */}
+            <div
+              className={cn(
+                "transition-all duration-300 ease-in-out overflow-hidden",
+                isCreditChecked
+                  ? "max-h-40 opacity-100 mt-4" // Adjust max-h if needed
+                  : "max-h-0 opacity-0 mt-0"
+              )}
+            >
+              <FormField
+                control={form.control}
+                name="installments"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm">Installments (1-24)</FormLabel> {/* Adjusted label size */}
+                    <FormControl>
+                      {/* Ensure value is not undefined, default to empty string for input */}
+                      <Input
+                        type="number"
+                        min="1"
+                        max="24"
+                        placeholder="e.g., 12"
+                        {...field}
+                        value={field.value ?? ""} // Use nullish coalescing for default
+                        className="h-9 text-sm"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+        </div> {/* End of the transitioning wrapper div */}
 
         <div className="flex gap-4">
           <div className="flex gap-2">

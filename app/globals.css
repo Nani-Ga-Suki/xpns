@@ -4,41 +4,51 @@
 
 @layer base {
   :root {
-    /* Off‐white marble background with a warm hue */
-    --background: 42 30% 95%;
-    /* Dark slate text reminiscent of carved stone inscriptions */
-    --foreground: 220 20% 20%;
-    /* Light marble card background */
-    --card: 42 30% 98%;
-    --card-foreground: 220 20% 15%;
-    /* Popover mimics the marble background for consistency */
-    --popover: 42 30% 95%;
-    --popover-foreground: 220 20% 15%;
-    /* Primary: Aegean blue, inspired by the deep blue sea and sky */
-    --primary: 210 80% 50%;
-    --primary-foreground: 0 0% 0%;
-    /* Secondary: Warm terracotta echoing ancient pottery */
-    --secondary: 15 70% 50%;
-    --secondary-foreground: 0 0% 100%;
-    /* Muted: Pale olive, reflecting weathered stucco and nature */
-    --muted: 90 20% 90%;
-    --muted-foreground: 90 20% 30%;
-    /* Accent: Gold for a hint of classical luxury */
-    --accent: 45 80% 50%;
-    --accent-foreground: 0 0% 0%;
-    /* Destructive: A deep red for alerts, echoing Greek tragedy motifs */
-    --destructive: 0 80% 40%;
-    --destructive-foreground: 0 0% 100%;
-    /* Subtle gray border inspired by chiseled stone details */
-    --border: 210 10% 70%;
-    --input: 210 10% 70%;
-    --ring: 210 80% 50%;
-    --radius: 1rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    /* Warm off-white background (aged marble/parchment) */
+    --background: 35 40% 96%;
+    /* Warm dark brown foreground (aged bronze/dark clay) */
+    --foreground: 30 15% 25%;
+    /* Slightly lighter warm off-white card background */
+    --card: 35 40% 98%;
+    /* Warm dark brown card foreground */
+    --card-foreground: 30 15% 20%;
+    /* Popover consistent with background/card */
+    --popover: 35 40% 96%;
+    /* Warm dark brown popover foreground */
+    --popover-foreground: 30 15% 20%;
+    /* Primary: Warm terracotta/ochre */
+    --primary: 25 75% 55%;
+    /* Primary Foreground: Light warm grey for contrast */
+    --primary-foreground: 30 10% 95%;
+    /* Secondary: Muted olive green */
+    --secondary: 80 25% 45%;
+    /* Secondary Foreground: Light warm grey for contrast */
+    --secondary-foreground: 30 10% 95%;
+    /* Muted: Pale warm beige */
+    --muted: 35 25% 92%;
+    /* Muted Foreground: Medium warm brown */
+    --muted-foreground: 30 15% 45%;
+    /* Accent: Gold (classical luxury) */
+    --accent: 45 80% 50%; /* Kept original gold */
+    /* Accent Foreground: Black for contrast */
+    --accent-foreground: 0 0% 0%; /* Kept original black */
+    /* Destructive: Warmer red */
+    --destructive: 5 75% 50%;
+    /* Destructive Foreground: White for contrast */
+    --destructive-foreground: 0 0% 100%; /* Kept original white */
+    /* Border: Light warm grey/beige */
+    --border: 35 15% 80%;
+    /* Input: Consistent with border */
+    --input: 35 15% 80%;
+    /* Ring: Matches new primary */
+    --ring: 25 75% 55%;
+    --radius: 1rem; /* Kept original radius */
+    /* Chart colors aligned with warm palette */
+    --chart-1: 25 75% 65%; /* Lighter Terracotta */
+    --chart-2: 80 30% 55%; /* Medium Olive */
+    --chart-3: 45 70% 60%; /* Softer Gold */
+    --chart-4: 30 25% 70%; /* Warm Beige */
+    --chart-5: 20 40% 40%; /* Darker Warm Brown */
   }
 
   .dark {
@@ -53,7 +63,8 @@
     --popover: 220 20% 8%;
     --popover-foreground: 210 40% 98%;
     /* Brighter primary in dark mode for better visibility */
-    --primary: 210 80% 60%;
+    /* Adjusted primary for dark theme (was brighter blue) */
+    --primary: 15 70% 40%;
     --primary-foreground: 0 0% 0%;
     /* Adjusted secondary for dark theme */
     --secondary: 15 70% 40%;
@@ -68,9 +79,11 @@
     --destructive: 0 80% 30%;
     --destructive-foreground: 0 0% 100%;
     /* Darker borders for definition */
-    --border: 220 20% 20%;
-    --input: 220 20% 20%;
-    --ring: 210 80% 60%;
+    /* Neutral dark border */
+    --border: 220 5% 20%;
+    --input: 220 5% 20%;
+    /* Ring matches new primary */
+    --ring: 15 70% 40%;
     --radius: 1rem;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -173,3 +186,7 @@ table {
   transform: translateY(-2px);
 }
 
+/* Custom badge style for Income */
+.badge-income {
+  @apply border-transparent bg-emerald-500 text-emerald-50 hover:bg-emerald-500/80 dark:bg-emerald-600 dark:text-emerald-50 dark:hover:bg-emerald-600/80;
+}

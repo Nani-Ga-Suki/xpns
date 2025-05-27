@@ -5,6 +5,10 @@ export interface Expense {
   date: Date
   category: string
   notes?: string
+  isCredit?: boolean
+  installments?: number
+  remainingInstallments?: number
+  originalAmount?: number
 }
 
 export interface ExpenseCategory {

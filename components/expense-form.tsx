@@ -9,6 +9,7 @@ import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -24,6 +25,11 @@ const formSchema = z.object({
   category: z.string({ required_error: "Please select a category" }),
   date: z.date({ required_error: "Please select a date" }),
   notes: z.string().optional(),
+  isCredit: z.boolean().default(false),
+  installments: z.coerce.number().min(1).max(24).optional()
+}).refine(data => !data.isCredit || data.installments, {
+  message: "Installments are required for credit purchases",
+  path: ["installments"]
 })
 
 interface ExpenseFormProps {
@@ -73,10 +79,17 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
   }, [editId, editingExpenseId, expenses, form, initialExpense])
 
   function handleSubmit(values: z.infer<typeof formSchema>) {
+    const expenseData = {
+      ...values,
+      amount: values.isCredit ? values.amount / (values.installments || 1) : values.amount,
+      originalAmount: values.isCredit ? values.amount : undefined,
+      remainingInstallments: values.isCredit ? (values.installments || 1) - 1 : undefined,
+    }
+
     if (isEditing && editingExpenseId) {
       onUpdate({
         id: editingExpenseId,
-        ...values,
+        ...expenseData,
       })
       // Reset form and editing state
       setIsEditing(false)
@@ -86,7 +99,7 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
         router.push(window.location.pathname)
       }
     } else {
-      onSubmit(values)
+      onSubmit(expenseData)
     }
 
     form.reset({
@@ -95,6 +108,8 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
       category: "",
       date: new Date(),
       notes: "",
+      isCredit: false,
+      installments: undefined,
     })
   }
 
@@ -110,8 +125,49 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6"> {/* Increased spacing */}
+        {/* Credit Purchase Checkbox and Installments */}
+        <div className="space-y-4">
+          <FormField
+            control={form.control}
+            name="isCredit"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 pt-1">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Credit Purchase</FormLabel>
+                  <FormDescription>
+                    Check if this is a credit purchase with installments.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          {form.watch("isCredit") && (
+            <FormField
+              control={form.control}
+              name="installments"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Number of Installments (1-24)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min="1" max="24" placeholder="e.g., 12" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+        </div>
+
+        {/* Amount and Date - Added md:items-start for top alignment */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-start">
           <FormField
             control={form.control}
             name="amount"
@@ -120,7 +176,7 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
                 <FormLabel>Amount</FormLabel>
                 <FormControl>
                   <div className="relative">
-                    <span className="absolute left-3 top-2.5">$</span>
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
                     <Input placeholder="0.00" type="number" step="0.01" className="pl-7" {...field} />
                   </div>
                 </FormControl>
@@ -140,10 +196,10 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
                     <FormControl>
                       <Button
                         variant={"outline"}
-                        className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
+                        className={cn("w-full justify-start pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
                       >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
                         {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
@@ -157,6 +213,7 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
           />
         </div>
 
+        {/* Description, Category, Notes */}
         <FormField
           control={form.control}
           name="description"
@@ -222,6 +279,52 @@ export function ExpenseForm({ categories, onSubmit, onUpdate, expenses, initialE
           )}
           <Button type="submit">{isEditing ? "Update Expense" : "Add Expense"}</Button>
         </div>
+
+        {expenses.filter(e => e.isCredit && (e.remainingInstallments || 0) > 0).length > 0 && (
+          <div className="mt-8 border-t pt-6">
+            <h3 className="text-lg font-medium mb-4">Active Credit Purchases</h3>
+            <div className="space-y-4">
+              {expenses
+                .filter(e => e.isCredit && (e.remainingInstallments || 0) > 0)
+                .map(expense => (
+                  <div key={expense.id} className="border rounded-lg p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">{expense.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {expense.remainingInstallments} of {expense.installments} installments remaining
+                        </p>
+                        <p className="text-sm">
+                          Original amount: ${expense.originalAmount?.toFixed(2)} |
+                          Current installment: ${expense.amount.toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingExpenseId(expense.id)
+                            form.reset({
+                              amount: expense.originalAmount || expense.amount,
+                              description: expense.description,
+                              category: expense.category,
+                              date: new Date(expense.date),
+                              notes: expense.notes || "",
+                              isCredit: true,
+                              installments: expense.installments,
+                            })
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </form>
     </Form>
   )

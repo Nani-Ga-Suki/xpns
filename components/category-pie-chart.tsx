@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recha
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { useMobile } from "@/hooks/use-mobile" // Import useMobile
 import type { Transaction } from "@/types/supabase"
 
 interface CategoryPieChartProps {
@@ -13,13 +14,13 @@ interface CategoryPieChartProps {
 }
 
 export function CategoryPieChart({ transactions, isLoading = false }: CategoryPieChartProps) {
-  const [includeIncome, setIncludeIncome] = useState(false)
+  const isMobile = useMobile() // Use the hook
 
   const data = useMemo(() => {
     if (transactions.length === 0) return []
 
     // Filter transactions based on the toggle
-    const filteredTransactions = includeIncome ? transactions : transactions.filter((t) => t.type === "expense")
+    const filteredTransactions = transactions // Process all passed transactions
 
     // Calculate total for each category
     const categoryTotals: Record<string, { value: number; type: "income" | "expense" }> = {}
@@ -43,7 +44,7 @@ export function CategoryPieChart({ transactions, isLoading = false }: CategoryPi
       value: data.value,
       type: data.type,
     }))
-  }, [transactions, includeIncome])
+  }, [transactions])
 
   // Define colors for the chart
   const COLORS = [
@@ -57,11 +58,8 @@ export function CategoryPieChart({ transactions, isLoading = false }: CategoryPi
     "hsl(var(--accent))",
   ]
 
-  // Custom color function based on transaction type
-  const getColor = (entry: any, index: number) => {
-    if (entry.type === "income") {
-      return "hsl(var(--chart-2))" // Use a specific color for income
-    }
+  // Standard color assignment
+  const getColor = (_entry: any, index: number) => {
     return COLORS[index % COLORS.length]
   }
 
@@ -79,26 +77,21 @@ export function CategoryPieChart({ transactions, isLoading = false }: CategoryPi
 
   return (
     <div className="h-[400px]">
-      <div className="flex items-center justify-end mb-4 space-x-2">
-        <Switch id="include-income" checked={includeIncome} onCheckedChange={setIncludeIncome} />
-        <Label htmlFor="include-income">Include Income</Label>
-      </div>
-
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
             data={data}
             cx="50%"
             cy="50%"
-            labelLine={true}
-            outerRadius={150}
+            labelLine={!isMobile} // Hide label line on mobile
+            outerRadius={isMobile ? 100 : 150} // Smaller radius on mobile
             fill="#8884d8"
             dataKey="value"
             nameKey="name"
-            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+            label={isMobile ? false : ({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} // Hide labels on mobile
           >
             {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={getColor(entry, index)} />
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
           <Tooltip
@@ -111,7 +104,7 @@ export function CategoryPieChart({ transactions, isLoading = false }: CategoryPi
               boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
             }}
           />
-          <Legend />
+          {!isMobile && <Legend />} {/* Hide legend on mobile */}
         </PieChart>
       </ResponsiveContainer>
     </div>

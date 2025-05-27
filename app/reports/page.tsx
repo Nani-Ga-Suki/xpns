@@ -1,12 +1,30 @@
+"use client" // Required for useState
+
+import { useState, useEffect, useTransition, Suspense } from "react" // Import useState, useEffect, useTransition, Suspense
 import type { Metadata } from "next"
+import dynamic from "next/dynamic" // Import dynamic
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs" // Use client version
 import { DashboardShell } from "@/components/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { Overview } from "@/components/overview"
-import { CategoryPieChart } from "@/components/category-pie-chart"
+import { Skeleton } from "@/components/ui/skeleton" // Import Skeleton for fallback
+
+// Lazy load chart components
+const Overview = dynamic(() => import("@/components/overview").then((mod) => mod.Overview), {
+  loading: () => <Skeleton className="h-[350px] w-full" />,
+  ssr: false, // Charts often rely on browser APIs
+})
+const CategoryPieChart = dynamic(() => import("@/components/category-pie-chart").then((mod) => mod.CategoryPieChart), {
+  loading: () => <Skeleton className="h-[400px] w-full" />,
+  ssr: false, // Charts often rely on browser APIs
+})
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch" // Import Switch
+import { Label } from "@/components/ui/label" // Import Label
+import { Button } from "@/components/ui/button" // Import Button
+import { useToast } from "@/hooks/use-toast" // Import useToast
+import { payInstallment } from "./actions" // Import the server action
 import {
   TrendingDownIcon,
   TrendingUpIcon,
@@ -24,7 +42,7 @@ import {
   CheckCircle2,
   Wallet,
 } from "lucide-react"
-import type { Transaction } from "@/types/supabase"
+import type { Transaction, Database } from "@/types/supabase" // Import Database type
 import {
   format,
   subMonths,
@@ -46,6 +64,9 @@ function calculateMonthlyData(transactions: Transaction[]) {
   const monthlyData: Record<string, { income: number; expense: number }> = {}
 
   transactions.forEach((transaction) => {
+    // Exclude initial credit purchases from monthly expense totals (only count actual payments)
+    if (transaction.is_credit) return;
+
     const date = new Date(transaction.date)
     const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`
 
@@ -55,7 +76,7 @@ function calculateMonthlyData(transactions: Transaction[]) {
 
     if (transaction.type === "income") {
       monthlyData[monthKey].income += Number(transaction.amount)
-    } else {
+    } else if (transaction.type === "expense") { // Ensure it's an expense and not a credit purchase entry
       monthlyData[monthKey].expense += Number(transaction.amount)
     }
   })
@@ -104,7 +125,10 @@ function calculateSpendingTrends(transactions: Transaction[]) {
 
     const income = monthTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0)
 
-    const expense = monthTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0)
+    // Exclude initial credit purchases from expense calculation for trends
+    const expense = monthTransactions
+      .filter((t) => t.type === "expense" && !t.is_credit)
+      .reduce((sum, t) => sum + Number(t.amount), 0)
 
     const savings = income - expense
     const savingsRate = income > 0 ? (savings / income) * 100 : 0
@@ -187,7 +211,8 @@ function calculateTransactionStats(transactions: Transaction[]) {
     const weekday = format(transactionDate, "EEEE")
     weekdayCount[weekday] = (weekdayCount[weekday] || 0) + 1
 
-    if (t.type === "expense" && amount > stats.largestExpense.amount) {
+    // Exclude initial credit purchases from largest *cash flow* expense stat
+    if (t.type === "expense" && !t.is_credit && amount > stats.largestExpense.amount) {
       stats.largestExpense = {
         amount,
         description: t.description,
@@ -227,7 +252,10 @@ function calculateTransactionStats(transactions: Transaction[]) {
   // Weekday distribution
   stats.weekdayDistribution = weekdayCount
 
-  stats.avgTransactionAmount = totalAmount / transactions.length
+  // Calculate average based on cash-flow affecting transactions only
+  const cashFlowTransactions = transactions.filter(t => !t.is_credit);
+  const cashFlowTotalAmount = cashFlowTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+  stats.avgTransactionAmount = cashFlowTransactions.length > 0 ? cashFlowTotalAmount / cashFlowTransactions.length : 0;
 
   return stats
 }
@@ -235,7 +263,10 @@ function calculateTransactionStats(transactions: Transaction[]) {
 // Calculate daily spending for the last 30 days
 function calculateDailySpending(transactions: Transaction[]) {
   const thirtyDaysAgo = subDays(new Date(), 30)
-  const recentTransactions = transactions.filter((t) => new Date(t.date) >= thirtyDaysAgo && t.type === "expense")
+  // Filter for non-credit expenses for daily spending calculation
+  const recentTransactions = transactions.filter(
+    (t) => new Date(t.date) >= thirtyDaysAgo && t.type === "expense" && !t.is_credit,
+  )
 
   const dailySpending: Record<string, number> = {}
 
@@ -269,7 +300,8 @@ function calculateRecurringExpenses(transactions: Transaction[]) {
 
   // Group expenses by description
   transactions
-    .filter((t) => t.type === "expense")
+    // Filter for non-credit expenses when calculating standard recurring expenses
+    .filter((t) => t.type === "expense" && !t.is_credit)
     .forEach((t) => {
       const key = t.description.toLowerCase().trim()
       if (!expensesByDescription[key]) {
@@ -301,37 +333,89 @@ function calculateRecurringExpenses(transactions: Transaction[]) {
   return recurring
 }
 
-export default async function ReportsPage() {
-  const supabase = createServerComponentClient({ cookies })
+// Calculate credit installments with remaining payments
+function calculateCreditInstallments(transactions: Transaction[]) {
+  return transactions
+    .filter((t) => t.type === "expense" && t.is_credit && t.remaining_installments && t.remaining_installments > 0)
+    .map((t) => ({
+      id: t.id,
+      description: t.description,
+      category: t.category || "Uncategorized",
+      amount: Number(t.amount), // Installment amount
+      remaining: t.remaining_installments || 0,
+      total: t.installments || 0,
+    }))
+    .sort((a, b) => new Date(b.id).getTime() - new Date(a.id).getTime()) // Sort by creation time or ID if date isn't unique enough
+}
 
-  // Get authenticated user
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
+// Note: Since we added "use client", this component can no longer be async directly.
+// Data fetching needs to happen in a parent Server Component or via client-side fetching (e.g., SWR/useEffect).
+// For this example, we'll assume data is passed as props or fetched client-side.
+// We'll keep the async structure for now but acknowledge this limitation.
+// A better approach would be to refactor data fetching.
 
-  if (userError || !user) {
-    redirect("/login")
-  }
+export default function ReportsPage() {
+  // TODO: Refactor data fetching to be client-side or passed from Server Component parent
+  // For now, simulate fetched data (replace with actual fetching logic)
+  const [transactions, setTransactions] = useState<Transaction[]>([]) // Example state
+  const [isLoading, setIsLoading] = useState(true) // Data loading state
+  const [isPending, startTransition] = useTransition() // Server action pending state
+  const { toast } = useToast() // Toast hook
 
-  // Fetch transactions
-  const { data: transactions, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("date", { ascending: false })
+  // --- Client-Side Data Fetching ---
+  useEffect(() => {
+    const supabase = createClientComponentClient<Database>() // Initialize client Supabase
+    let isMounted = true // Prevent state update on unmounted component
 
-  if (error) {
-    console.error("Error fetching transactions:", error)
-  }
+    const fetchData = async () => {
+      setIsLoading(true)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-  const monthlyData = calculateMonthlyData(transactions || [])
-  const topExpenseCategories = calculateTopCategories(transactions || [], "expense")
-  const topIncomeCategories = calculateTopCategories(transactions || [], "income")
-  const spendingTrends = calculateSpendingTrends(transactions || [])
-  const transactionStats = calculateTransactionStats(transactions || [])
-  const dailySpending = calculateDailySpending(transactions || [])
-  const recurringExpenses = calculateRecurringExpenses(transactions || [])
+      if (sessionError || !session?.user) {
+        console.error("Error getting session or no user:", sessionError)
+        // Optionally redirect or show login prompt
+        // redirect('/login') // Redirect might not work directly in useEffect depending on Next.js version/setup
+        if (isMounted) setIsLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('transactions')
+        // Select only necessary columns for report calculations
+        .select('id, amount, date, type, category, description, notes, is_credit, installments, remaining_installments')
+        .eq('user_id', session.user.id)
+        .order('date', { ascending: false })
+
+      if (isMounted) {
+        if (error) {
+          console.error("Error fetching transactions:", error)
+          // Handle error state in UI if needed
+        } else {
+          setTransactions(data || [])
+        }
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+
+    return () => {
+      isMounted = false // Cleanup function to set flag when component unmounts
+    }
+  }, []) // Empty dependency array ensures this runs once on mount
+  // --- END Client-Side Data Fetching ---
+
+  const [showCreditInstallments, setShowCreditInstallments] = useState(false)
+  // --- Calculate derived data (will re-run when 'transactions' state changes) ---
+  // Note: Consider useMemo for performance optimization if calculations are heavy and transactions list is large
+  const monthlyData = calculateMonthlyData(transactions)
+  const topExpenseCategories = calculateTopCategories(transactions, "expense")
+  const topIncomeCategories = calculateTopCategories(transactions, "income")
+  const spendingTrends = calculateSpendingTrends(transactions)
+  const transactionStats = calculateTransactionStats(transactions)
+  const dailySpending = calculateDailySpending(transactions)
+  const recurringExpenses = calculateRecurringExpenses(transactions)
+  const creditInstallments = calculateCreditInstallments(transactions)
 
   return (
     <DashboardShell>
@@ -342,7 +426,7 @@ export default async function ReportsPage() {
         </div>
 
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 h-auto">
+          <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-4 h-auto">
             <TabsTrigger value="overview" className="main-tabs-trigger py-2">
               <BarChart2 className="h-4 w-4 mr-2" />
               <span>Overview</span>
@@ -367,7 +451,7 @@ export default async function ReportsPage() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Current Month Income</CardTitle>
-                  <DollarSign className="h-4 w-4 text-primary" />
+                  <DollarSign className="h-4 w-4 text-emerald-500 dark:text-emerald-600" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">${spendingTrends.currentMonth?.income.toFixed(2) || "0.00"}</div>
@@ -789,42 +873,114 @@ export default async function ReportsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Recurring Expenses</CardTitle>
-                <CardDescription>Regular payments you make</CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>{showCreditInstallments ? "Credit Installments" : "Recurring Expenses"}</CardTitle>
+                    <CardDescription>
+                      {showCreditInstallments ? "Upcoming credit payments" : "Regular payments detected"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="recurring-toggle"
+                      checked={showCreditInstallments}
+                      onCheckedChange={setShowCreditInstallments}
+                    />
+                    <Label htmlFor="recurring-toggle">Show Installments</Label>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                {recurringExpenses.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2 font-medium">Description</th>
-                          <th className="text-left py-2 font-medium">Category</th>
-                          <th className="text-left py-2 font-medium">Frequency</th>
-                          <th className="text-right py-2 font-medium">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recurringExpenses.map((expense, index) => (
-                          <tr key={index} className="border-b">
-                            <td className="py-2">{expense.description}</td>
-                            <td className="py-2 capitalize">{expense.category}</td>
-                            <td className="py-2">{expense.frequency}</td>
-                            <td className="py-2 text-right">${expense.avgAmount.toFixed(2)}</td>
+                {showCreditInstallments ? (
+                  // Credit Installments View
+                  creditInstallments.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-2 font-medium">Description</th>
+                            <th className="text-left py-2 px-2 font-medium">Category</th>
+                            <th className="text-right py-2 px-2 font-medium">Installment</th>
+                            <th className="text-center py-2 px-2 font-medium">Remaining</th>
+                            <th className="text-center py-2 px-2 font-medium">Action</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {creditInstallments.map((installment) => (
+                            <tr key={installment.id} className="border-b">
+                              <td className="py-2 px-2">{installment.description}</td>
+                              <td className="py-2 px-2 capitalize">{installment.category}</td>
+                              <td className="py-2 px-2 text-right">${installment.amount.toFixed(2)}</td>
+                              <td className="py-2 px-2 text-center">
+                                {installment.remaining}/{installment.total}
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isPending} // Disable button while action is pending
+                                  onClick={() => {
+                                    startTransition(async () => {
+                                      const result = await payInstallment(installment.id)
+                                      toast({
+                                        title: result.success ? "Success" : "Error",
+                                        description: result.message,
+                                        variant: result.success ? "default" : "destructive",
+                                      })
+                                      // Data should refresh automatically due to revalidatePath in action
+                                    })
+                                  }}
+                                >
+                                  {isPending ? "Paying..." : "Pay"}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="h-40 flex items-center justify-center">
+                      <p className="text-muted-foreground">No active credit installments found</p>
+                    </div>
+                  )
                 ) : (
-                  <div className="h-40 flex items-center justify-center">
-                    <p className="text-muted-foreground">No recurring expenses detected</p>
-                  </div>
+                  // Regular Recurring Expenses View
+                  recurringExpenses.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-2 font-medium">Description</th>
+                            <th className="text-left py-2 px-2 font-medium">Category</th>
+                            <th className="text-left py-2 px-2 font-medium">Frequency</th>
+                            <th className="text-right py-2 px-2 font-medium">Avg. Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recurringExpenses.map((expense, index) => (
+                            <tr key={index} className="border-b">
+                              <td className="py-2 px-2">{expense.description}</td>
+                              <td className="py-2 px-2 capitalize">{expense.category}</td>
+                              <td className="py-2 px-2">{expense.frequency}</td>
+                              <td className="py-2 px-2 text-right">${expense.avgAmount.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="h-40 flex items-center justify-center">
+                      <p className="text-muted-foreground">No recurring expenses detected</p>
+                    </div>
+                  )
                 )}
               </CardContent>
               <CardFooter className="text-sm text-muted-foreground">
                 <Clock className="h-4 w-4 mr-2" />
-                Based on transaction patterns over time
+                {showCreditInstallments
+                  ? "Credit purchases with outstanding payments"
+                  : "Based on transaction patterns over time"}
               </CardFooter>
             </Card>
 
