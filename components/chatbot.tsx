@@ -85,16 +85,13 @@ export function Chatbot() {
         }),
       });
 
-      // As soon as headers are received, stop the global "Thinking..." indicator
-      if (isWaitingForResponse) setIsWaitingForResponse(false);
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to read error response" }));
         throw new Error(errorData.error || `API request failed with status ${response.status}`);
       }
       if (!response.body) throw new Error("Response body is null");
 
-      // Add assistant placeholder now that we have a response body to process
+      // Add assistant placeholder and hide thinking indicator at the same time
       setMessages(prevMessages => {
         if (prevMessages.find(m => m.id === assistantMessageId)) return prevMessages; // Avoid double-add if error logic already did
         return [
@@ -110,6 +107,9 @@ export function Chatbot() {
         ];
       });
       assistantMessageAddedToState = true;
+      
+      // Hide thinking indicator now that we've added the assistant message
+      setIsWaitingForResponse(false);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -184,7 +184,7 @@ export function Chatbot() {
 
     } catch (err) {
       // Ensure global "Thinking..." indicator is off on error
-      if (isWaitingForResponse) setIsWaitingForResponse(false);
+      setIsWaitingForResponse(false);
       console.error("Chat fetch/stream error:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
       setError(err instanceof Error ? err : new Error(errorMessage));
@@ -207,7 +207,7 @@ export function Chatbot() {
     } finally {
       setIsLoading(false);
       // Safeguard: ensure global "Thinking..." indicator is off
-      if (isWaitingForResponse) setIsWaitingForResponse(false);
+      setIsWaitingForResponse(false);
     }
   }
 
@@ -383,8 +383,3 @@ export function Chatbot() {
     </div>
   )
 }
-
-// CSS for truncation (not directly used by pre tag with max-height, but kept if needed elsewhere)
-// const styles = `...`; (Keep your style injection if other elements rely on it)
-// For the pre tag, max-height + overflow:hidden gives the visual truncation effect.
-// The 'truncate-3-lines' class is not applied to the <pre> tag in this version for smoother max-height transition.
